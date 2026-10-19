@@ -6,7 +6,6 @@ use bollard::query_parameters::{
     ListContainersOptionsBuilder, StatsOptionsBuilder, StopContainerOptionsBuilder,
 };
 use futures_util::{StreamExt, future::join_all};
-use tokio::sync::RwLock;
 
 use crate::history::History;
 
@@ -15,7 +14,6 @@ pub const CONTAINER_HISTORY_LEN: usize = 120;
 #[derive(Clone)]
 pub struct ContainerRow {
     pub id: String,
-    pub short_id: String,
     pub name: String,
     pub image: String,
     pub status: String,
@@ -27,7 +25,6 @@ pub struct ContainerRow {
     pub net_tx_bps: f64,
     pub pids: u64,
     pub cpu_history: History,
-    pub mem_history: History,
 }
 
 struct RawStats {
@@ -45,7 +42,7 @@ pub struct DockerMonitor {
     pub error: Option<String>,
     pub containers: Vec<ContainerRow>,
     prev_net: HashMap<String, (u64, u64)>,
-    histories: HashMap<String, (History, History)>,
+    histories: HashMap<String, History>,
 }
 
 impl DockerMonitor {
@@ -93,7 +90,6 @@ impl DockerMonitor {
 
         struct Meta {
             id: String,
-            short_id: String,
             name: String,
             image: String,
             status: String,
@@ -113,7 +109,7 @@ impl DockerMonitor {
                     .as_ref()
                     .and_then(|n| n.first())
                     .map(|n| n.trim_start_matches('/').to_string())
-                    .unwrap_or_else(|| short_id.clone());
+                    .unwrap_or(short_id);
                 let image = summary.image.unwrap_or_default();
                 let status = summary.status.unwrap_or_default();
                 let running = summary
@@ -123,7 +119,6 @@ impl DockerMonitor {
                     .unwrap_or(false);
                 Some(Meta {
                     id,
-                    short_id,
                     name,
                     image,
                     status,
@@ -170,23 +165,11 @@ impl DockerMonitor {
             let hist = self
                 .histories
                 .entry(m.id.clone())
-                .or_insert_with(|| {
-                    (
-                        History::new(CONTAINER_HISTORY_LEN),
-                        History::new(CONTAINER_HISTORY_LEN),
-                    )
-                });
-            hist.0.push(cpu_pct);
-            let mem_pct = if mem_limit > 0 {
-                mem_usage as f64 / mem_limit as f64 * 100.0
-            } else {
-                0.0
-            };
-            hist.1.push(mem_pct);
+                .or_insert_with(|| History::new(CONTAINER_HISTORY_LEN));
+            hist.push(cpu_pct);
 
             rows.push(ContainerRow {
                 id: m.id,
-                short_id: m.short_id,
                 name: m.name,
                 image: m.image,
                 status: m.status,
@@ -197,8 +180,7 @@ impl DockerMonitor {
                 net_rx_bps,
                 net_tx_bps,
                 pids,
-                cpu_history: hist.0.clone(),
-                mem_history: hist.1.clone(),
+                cpu_history: hist.clone(),
             });
         }
 
@@ -294,5 +276,3 @@ async fn fetch_stats(docker: &Docker, id: &str) -> Option<RawStats> {
         pids,
     })
 }
-
-pub type SharedDocker = std::sync::Arc<RwLock<DockerMonitor>>;

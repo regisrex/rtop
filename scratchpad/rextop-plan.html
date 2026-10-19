@@ -1,0 +1,568 @@
+<title>rextop</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg:#F2F4F6;
+    --surface:#FFFFFF;
+    --surface-2:#E8EBEF;
+    --border:#D7DCE2;
+    --ink:#192230;
+    --muted:#5B6577;
+    --accent:#C97A1E;
+    --accent-ink:#5A3A0E;
+    --good:#1E8F63;
+    --bad:#C23B3B;
+
+    --term-bg:#0B0E14;
+    --term-surface:#121723;
+    --term-surface-2:#172033;
+    --term-border:#232B3B;
+    --term-text:#D4DBE6;
+    --term-dim:#64718A;
+    --c-cpu:#E8A23D;
+    --c-mem:#8B7FD6;
+    --c-net:#3FC7B8;
+    --c-disk:#E8698A;
+    --c-good:#4CC38A;
+    --c-bad:#E24C4C;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0D1117;
+      --surface:#151B24;
+      --surface-2:#1C2430;
+      --border:#2A3442;
+      --ink:#E7ECF2;
+      --muted:#90A0B5;
+      --accent:#E8A23D;
+      --accent-ink:#2B1C08;
+      --good:#4CC38A;
+      --bad:#E8707C;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0D1117;
+    --surface:#151B24;
+    --surface-2:#1C2430;
+    --border:#2A3442;
+    --ink:#E7ECF2;
+    --muted:#90A0B5;
+    --accent:#E8A23D;
+    --accent-ink:#2B1C08;
+    --good:#4CC38A;
+    --bad:#E8707C;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+    padding-inline:20px;
+    padding-block:48px 80px;
+    display:flex;
+    justify-content:center;
+  }
+  .page{width:100%;max-width:980px;display:flex;flex-direction:column;gap:56px;}
+  h1,h2,h3{font-family:"IBM Plex Sans Condensed",system-ui,sans-serif;text-wrap:balance;margin:0;}
+  code,kbd,.mono,.num{font-family:"IBM Plex Mono",ui-monospace,monospace;}
+  .num{font-variant-numeric:tabular-nums;}
+  p{margin:0;line-height:1.6;color:var(--muted);max-width:62ch;}
+  a{color:var(--accent);}
+
+  /* ---- hero ---- */
+  .hero{display:flex;flex-direction:column;gap:18px;}
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:8px;width:fit-content;
+    font-family:"IBM Plex Mono";font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--accent-ink);background:var(--accent);padding:4px 10px;border-radius:3px;
+  }
+  .hero h1{font-size:clamp(2.1rem,5vw,3rem);font-weight:700;letter-spacing:-.01em;}
+  .hero h1 span{color:var(--accent);}
+  .hero p{font-size:1.05rem;max-width:58ch;}
+  .pill-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;}
+  .pill{
+    font-family:"IBM Plex Mono";font-size:.78rem;color:var(--muted);
+    border:1px solid var(--border);border-radius:999px;padding:4px 12px;background:var(--surface);
+  }
+
+  .stat-strip{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface);
+  }
+  .stat{padding:18px 20px;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:4px;}
+  .stat:last-child{border-right:none;}
+  .stat .n{font-family:"IBM Plex Sans Condensed";font-weight:700;font-size:1.7rem;color:var(--accent);}
+  .stat .l{font-size:.78rem;color:var(--muted);}
+
+  section{display:flex;flex-direction:column;gap:16px;}
+  .section-head{display:flex;flex-direction:column;gap:6px;}
+  .section-head .kicker{font-family:"IBM Plex Mono";font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);}
+  .section-head h2{font-size:1.5rem;font-weight:600;}
+
+  /* ---- terminal frame (fixed dark, like a screenshot, by design) ---- */
+  .term{
+    background:var(--term-bg);border:1px solid var(--term-border);border-radius:10px;
+    overflow:hidden;box-shadow:0 1px 0 rgba(0,0,0,.2);
+  }
+  .term-bar{
+    display:flex;align-items:center;gap:10px;padding:9px 14px;background:var(--term-surface);
+    border-bottom:1px solid var(--term-border);
+  }
+  .term-dot{width:9px;height:9px;border-radius:50%;background:var(--term-border);}
+  .term-tabs{display:flex;gap:4px;margin-left:8px;font-family:"IBM Plex Mono";font-size:.75rem;}
+  .term-tab{padding:3px 10px;border-radius:4px;color:var(--term-dim);}
+  .term-tab.active{background:var(--term-surface-2);color:var(--term-text);}
+  .term-body{padding:16px;color:var(--term-text);font-family:"IBM Plex Mono";}
+  .term-foot{
+    display:flex;flex-wrap:wrap;gap:14px;padding:8px 14px;background:var(--term-surface);
+    border-top:1px solid var(--term-border);font-family:"IBM Plex Mono";font-size:.72rem;color:var(--term-dim);
+  }
+  .term-foot kbd{color:var(--term-text);background:var(--term-surface-2);border-radius:3px;padding:1px 5px;margin-right:4px;}
+
+  .host-line{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.78rem;color:var(--term-dim);margin-bottom:14px;}
+  .host-line b{color:var(--term-text);font-weight:500;}
+
+  .cores{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin-bottom:16px;}
+  .core{display:flex;flex-direction:column;gap:4px;}
+  .core .lbl{font-size:.65rem;color:var(--term-dim);display:flex;justify-content:space-between;}
+  .core .track{height:7px;border-radius:3px;background:var(--term-surface-2);overflow:hidden;}
+  .core .fill{height:100%;border-radius:3px;}
+
+  .gauge-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px;}
+  .gauge{background:var(--term-surface);border:1px solid var(--term-border);border-radius:7px;padding:10px 12px;}
+  .gauge .top{display:flex;justify-content:space-between;font-size:.7rem;color:var(--term-dim);margin-bottom:6px;}
+  .gauge .val{font-size:1.1rem;color:var(--term-text);}
+  .gauge .track{height:6px;border-radius:3px;background:var(--term-surface-2);margin-top:8px;overflow:hidden;}
+  .gauge .fill{height:100%;border-radius:3px;}
+
+  .chart-focus{background:var(--term-surface);border:1px solid var(--term-border);border-radius:7px;padding:14px 16px;margin-bottom:14px;}
+  .chart-focus .top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;}
+  .chart-focus .top .label{font-size:.72rem;color:var(--term-dim);letter-spacing:.05em;text-transform:uppercase;}
+  .chart-focus .top .reading{font-size:1.3rem;color:var(--c-cpu);}
+  .chart-focus svg{display:block;width:100%;height:auto;}
+
+  .spark-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+  .spark{background:var(--term-surface);border:1px solid var(--term-border);border-radius:7px;padding:10px 12px;}
+  .spark .top{display:flex;justify-content:space-between;font-size:.68rem;color:var(--term-dim);margin-bottom:6px;}
+  .spark svg{display:block;width:100%;height:36px;}
+
+  table.ttable{width:100%;border-collapse:collapse;font-size:.78rem;}
+  .ttable th{
+    text-align:left;font-weight:500;color:var(--term-dim);font-size:.68rem;letter-spacing:.04em;
+    text-transform:uppercase;padding:6px 10px;border-bottom:1px solid var(--term-border);
+  }
+  .ttable th.sorted{color:var(--c-cpu);}
+  .ttable td{padding:7px 10px;border-bottom:1px solid var(--term-surface-2);color:var(--term-text);white-space:nowrap;}
+  .ttable tr.sel td{background:var(--term-surface-2);}
+  .ttable td.cmd{color:var(--term-dim);overflow:hidden;text-overflow:ellipsis;max-width:220px;}
+  .filter-bar{
+    display:flex;align-items:center;gap:8px;background:var(--term-surface);border:1px solid var(--term-border);
+    border-radius:6px;padding:6px 10px;margin-bottom:10px;font-size:.78rem;color:var(--term-text);
+  }
+  .filter-bar .ghost{color:var(--term-dim);}
+  .pill-status{
+    display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;font-size:.68rem;
+  }
+  .pill-status.run{background:rgba(76,195,138,.15);color:var(--c-good);}
+  .pill-status.stop{background:rgba(100,113,138,.18);color:var(--term-dim);}
+  .mini-spark{width:64px;height:18px;display:block;}
+
+  .callout-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;}
+  .modal-ex{
+    background:var(--term-surface);border:1px solid var(--c-bad);border-radius:7px;padding:12px 14px;
+  }
+  .modal-ex .ttl{color:var(--c-bad);font-size:.78rem;margin-bottom:6px;}
+  .modal-ex .body{color:var(--term-text);font-size:.78rem;margin-bottom:8px;}
+  .modal-ex .keys{font-size:.72rem;color:var(--term-dim);}
+  .banner-ex{
+    background:rgba(232,76,76,.08);border:1px solid var(--c-bad);border-radius:7px;padding:12px 14px;
+    color:#F3B9B9;font-size:.78rem;line-height:1.5;
+  }
+  .banner-ex b{color:var(--c-bad);}
+  .caption{font-size:.82rem;color:var(--muted);}
+
+  /* ---- architecture ---- */
+  .diagram-wrap{overflow-x:auto;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px;}
+
+  /* ---- keybindings ---- */
+  .kb-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;}
+  .kb-group{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;}
+  .kb-group h3{font-size:.95rem;margin-bottom:10px;}
+  .kb-group .row{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--surface-2);font-size:.85rem;}
+  .kb-group .row:last-child{border-bottom:none;}
+  kbd{
+    font-family:"IBM Plex Mono";font-size:.72rem;background:var(--surface-2);border:1px solid var(--border);
+    border-bottom-width:2px;border-radius:4px;padding:1px 7px;color:var(--ink);
+  }
+  .kb-group .row span{color:var(--muted);}
+
+  /* ---- build sequence ---- */
+  .timeline{display:flex;flex-direction:column;}
+  .tstep{display:flex;gap:14px;padding:10px 0;border-bottom:1px solid var(--surface-2);}
+  .tstep:last-child{border-bottom:none;}
+  .tstep .mk{
+    width:22px;height:22px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
+    font-size:.7rem;font-family:"IBM Plex Mono";margin-top:1px;
+  }
+  .tstep.done .mk{background:var(--good);color:#fff;}
+  .tstep.next .mk{background:var(--accent);color:var(--accent-ink);}
+  .tstep.todo .mk{background:var(--surface-2);color:var(--muted);border:1px solid var(--border);}
+  .tstep .tt{font-weight:600;font-size:.92rem;}
+  .tstep .dd{font-size:.82rem;color:var(--muted);}
+  .tstep.done .tt{color:var(--good);}
+
+  footer{border-top:1px solid var(--border);padding-top:18px;font-size:.78rem;color:var(--muted);}
+
+  @media (max-width:640px){
+    .gauge-row,.spark-strip{grid-template-columns:repeat(2,1fr);}
+    .cores{grid-template-columns:repeat(4,1fr);}
+    .kb-grid,.callout-row{grid-template-columns:1fr;}
+  }
+</style>
+
+<div class="page">
+
+  <div class="hero">
+    <span class="eyebrow">build blueprint</span>
+    <h1>re<span>x</span>top</h1>
+    <p>htop told you a number. rextop shows you the shape of it: three minutes of
+      CPU, memory, network and disk history behind every gauge, a process table
+      you can kill from, and a live Docker panel you can filter — all in one
+      Rust binary, redrawn four times a second.</p>
+    <div class="pill-row">
+      <span class="pill">ratatui 0.30 + crossterm</span>
+      <span class="pill">sysinfo 0.39</span>
+      <span class="pill">bollard 0.21 (Docker Engine API)</span>
+      <span class="pill">tokio multi-thread</span>
+    </div>
+  </div>
+
+  <div class="stat-strip">
+    <div class="stat"><div class="n num">3</div><div class="l">views — overview, processes, docker</div></div>
+    <div class="stat"><div class="n num">4</div><div class="l">live time-series metrics</div></div>
+    <div class="stat"><div class="n num">180s</div><div class="l">max scrollback window</div></div>
+    <div class="stat"><div class="n num">2</div><div class="l">destructive actions, both confirm-gated</div></div>
+  </div>
+
+  <section>
+    <div class="section-head">
+      <span class="kicker">view 01 / overview</span>
+      <h2>Per-core gauges, four tracked metrics, one focused chart</h2>
+    </div>
+    <p>The header reads the host once; everything under it reads the last three
+      minutes. <kbd>←</kbd>/<kbd>→</kbd> or <kbd>m</kbd> swaps which metric owns
+      the big chart — the other three keep ticking in the strip below it so
+      nothing is ever fully out of view.</p>
+
+    <div class="term">
+      <div class="term-bar">
+        <span class="term-dot"></span><span class="term-dot"></span><span class="term-dot"></span>
+        <div class="term-tabs">
+          <span class="term-tab active">1 overview</span>
+          <span class="term-tab">2 processes</span>
+          <span class="term-tab">3 docker</span>
+        </div>
+      </div>
+      <div class="term-body">
+        <div class="host-line">
+          <span><b>kibo-rw</b></span><span>macOS 15.1 · Darwin 27.0.0</span>
+          <span>uptime <b>4d 09h</b></span><span>load <b>1.84 1.41 1.22</b></span>
+        </div>
+
+        <div class="cores">
+          <!-- 8 representative cores -->
+          <div class="core"><div class="lbl"><span>C0</span><span>72%</span></div><div class="track"><div class="fill" style="width:72%;background:var(--c-cpu)"></div></div></div>
+          <div class="core"><div class="lbl"><span>C1</span><span>45%</span></div><div class="track"><div class="fill" style="width:45%;background:var(--c-net)"></div></div></div>
+          <div class="core"><div class="lbl"><span>C2</span><span>88%</span></div><div class="track"><div class="fill" style="width:88%;background:var(--c-disk)"></div></div></div>
+          <div class="core"><div class="lbl"><span>C3</span><span>33%</span></div><div class="track"><div class="fill" style="width:33%;background:var(--c-net)"></div></div></div>
+          <div class="core"><div class="lbl"><span>C4</span><span>91%</span></div><div class="track"><div class="fill" style="width:91%;background:var(--c-disk)"></div></div></div>
+          <div class="core"><div class="lbl"><span>C5</span><span>20%</span></div><div class="track"><div class="fill" style="width:20%;background:var(--c-net)"></div></div></div>
+          <div class="core"><div class="lbl"><span>C6</span><span>55%</span></div><div class="track"><div class="fill" style="width:55%;background:var(--c-cpu)"></div></div></div>
+          <div class="core"><div class="lbl"><span>C7</span><span>67%</span></div><div class="track"><div class="fill" style="width:67%;background:var(--c-cpu)"></div></div></div>
+        </div>
+
+        <div class="gauge-row">
+          <div class="gauge">
+            <div class="top"><span>MEM</span><span class="val">11.2 / 32 GB</span></div>
+            <div class="track"><div class="fill" style="width:35%;background:var(--c-mem)"></div></div>
+          </div>
+          <div class="gauge">
+            <div class="top"><span>SWAP</span><span class="val">0.4 / 2 GB</span></div>
+            <div class="track"><div class="fill" style="width:20%;background:var(--c-mem)"></div></div>
+          </div>
+          <div class="gauge">
+            <div class="top"><span>DISK /</span><span class="val">412 / 926 GB</span></div>
+            <div class="track"><div class="fill" style="width:44%;background:var(--c-disk)"></div></div>
+          </div>
+        </div>
+
+        <div class="chart-focus">
+          <div class="top">
+            <span class="label">CPU · last 180s</span>
+            <span class="reading num">61.4%</span>
+          </div>
+          <svg viewBox="0 0 740 160" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="cpuFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#E8A23D" stop-opacity="0.45"/>
+                <stop offset="1" stop-color="#E8A23D" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <line x1="0" y1="10" x2="740" y2="10" stroke="#232B3B" stroke-width="1"/>
+            <line x1="0" y1="80" x2="740" y2="80" stroke="#232B3B" stroke-width="1"/>
+            <line x1="0" y1="150" x2="740" y2="150" stroke="#232B3B" stroke-width="1"/>
+            <text x="4" y="22" fill="#64718A" font-size="10" font-family="IBM Plex Mono">100%</text>
+            <text x="4" y="92" fill="#64718A" font-size="10" font-family="IBM Plex Mono">50%</text>
+            <text x="4" y="146" fill="#64718A" font-size="10" font-family="IBM Plex Mono">0%</text>
+            <path d="M0,150 L0,120 30,110 60,118 90,95 120,100 150,78 180,85 210,60 240,70 270,55 300,65 330,48 360,58
+                     390,40 420,52 450,36 480,44 510,30 540,38 570,28 600,34 630,24 660,30 690,20 720,26 740,22 740,150 Z"
+                  fill="url(#cpuFill)"/>
+            <path d="M0,120 30,110 60,118 90,95 120,100 150,78 180,85 210,60 240,70 270,55 300,65 330,48 360,58
+                     390,40 420,52 450,36 480,44 510,30 540,38 570,28 600,34 630,24 660,30 690,20 720,26 740,22"
+                  fill="none" stroke="#E8A23D" stroke-width="2"/>
+            <circle cx="740" cy="22" r="3.5" fill="#E8A23D"/>
+            <text x="2" y="158" fill="#64718A" font-size="9" font-family="IBM Plex Mono">-3m</text>
+            <text x="360" y="158" fill="#64718A" font-size="9" font-family="IBM Plex Mono">-1m30</text>
+            <text x="708" y="158" fill="#64718A" font-size="9" font-family="IBM Plex Mono">now</text>
+          </svg>
+        </div>
+
+        <div class="spark-strip">
+          <div class="spark">
+            <div class="top"><span>MEM</span><span class="num">35%</span></div>
+            <svg viewBox="0 0 160 36" preserveAspectRatio="none">
+              <polyline points="0,20 20,22 40,18 60,19 80,16 100,17 120,14 140,15 160,13" fill="none" stroke="#8B7FD6" stroke-width="2"/>
+            </svg>
+          </div>
+          <div class="spark">
+            <div class="top"><span>NET rx/tx</span><span class="num">4.2 / 0.8 MB/s</span></div>
+            <svg viewBox="0 0 160 36" preserveAspectRatio="none">
+              <polyline points="0,30 20,24 40,28 60,14 80,22 100,10 120,20 140,8 160,16" fill="none" stroke="#3FC7B8" stroke-width="2"/>
+            </svg>
+          </div>
+          <div class="spark">
+            <div class="top"><span>DISK r/w</span><span class="num">18 / 61 MB/s</span></div>
+            <svg viewBox="0 0 160 36" preserveAspectRatio="none">
+              <polyline points="0,28 20,26 40,30 60,20 80,24 100,12 120,18 140,22 160,15" fill="none" stroke="#E8698A" stroke-width="2"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+      <div class="term-foot">
+        <span><kbd>tab</kbd>switch view</span>
+        <span><kbd>←</kbd><kbd>→</kbd>metric</span>
+        <span><kbd>z</kbd>60/120/180s window</span>
+        <span><kbd>?</kbd>help</span>
+        <span><kbd>q</kbd>quit</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="kicker">view 02 / processes</span>
+      <h2>htop's table, with a filter box and a confirm step</h2>
+    </div>
+    <p>Sort columns toggle direction on a second press. Typing after <kbd>/</kbd>
+      filters by name or full command line live, no Enter required. <kbd>x</kbd>
+      never kills immediately — it opens the same confirm pattern Docker's
+      stop action uses, so a stray keypress can't take down the wrong thing.</p>
+
+    <div class="term">
+      <div class="term-bar">
+        <span class="term-dot"></span><span class="term-dot"></span><span class="term-dot"></span>
+        <div class="term-tabs">
+          <span class="term-tab">1 overview</span>
+          <span class="term-tab active">2 processes</span>
+          <span class="term-tab">3 docker</span>
+        </div>
+      </div>
+      <div class="term-body">
+        <div class="filter-bar">/ <span>cargo</span><span class="ghost">▏ filter by name or cmdline — esc to clear</span></div>
+        <table class="ttable">
+          <thead>
+            <tr><th>PID</th><th class="sorted">CPU% ▼</th><th>MEM</th><th>STATUS</th><th>NAME</th><th>CMD</th></tr>
+          </thead>
+          <tbody>
+            <tr class="sel"><td class="num">48213</td><td class="num">74.2</td><td class="num">1.1 GB</td><td>run</td><td>cargo</td><td class="cmd">cargo build --release</td></tr>
+            <tr><td class="num">48219</td><td class="num">41.8</td><td class="num">640 MB</td><td>run</td><td>rustc</td><td class="cmd">rustc --crate-name rextop src/main.rs</td></tr>
+            <tr><td class="num">1102</td><td class="num">8.3</td><td class="num">412 MB</td><td>run</td><td>WindowServer</td><td class="cmd">/System/Library/.../WindowServer</td></tr>
+            <tr><td class="num">612</td><td class="num">3.1</td><td class="num">96 MB</td><td>sleep</td><td>rextop</td><td class="cmd">./target/release/rextop</td></tr>
+            <tr><td class="num">2208</td><td class="num">1.4</td><td class="num">1.8 GB</td><td>sleep</td><td>Music</td><td class="cmd">/System/Applications/Music.app</td></tr>
+          </tbody>
+        </table>
+        <div class="callout-row">
+          <div class="modal-ex">
+            <div class="ttl">confirm kill</div>
+            <div class="body">Send SIGKILL to <b>cargo</b> (pid 48213)?</div>
+            <div class="keys"><kbd>y</kbd> confirm &nbsp; <kbd>any other key</kbd> cancel</div>
+          </div>
+          <p class="caption" style="align-self:center;">Same popup component is reused for the Docker stop action — one code path, two call sites.</p>
+        </div>
+      </div>
+      <div class="term-foot">
+        <span><kbd>/</kbd>filter</span>
+        <span><kbd>c</kbd>sort cpu</span>
+        <span><kbd>M</kbd>sort mem</span>
+        <span><kbd>p</kbd>sort pid</span>
+        <span><kbd>n</kbd>sort name</span>
+        <span><kbd>x</kbd>kill (confirm)</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="kicker">view 03 / docker</span>
+      <h2>Container stats pulled straight from the Engine API</h2>
+    </div>
+    <p>No shelling out to <code>docker stats</code> — <code>bollard</code> talks to
+      the daemon socket directly, and every running container's stats are fetched
+      concurrently so a ten-container host redraws as fast as a one-container host.
+      <kbd>a</kbd> toggles running-only vs. everything, including exited containers.</p>
+
+    <div class="term">
+      <div class="term-bar">
+        <span class="term-dot"></span><span class="term-dot"></span><span class="term-dot"></span>
+        <div class="term-tabs">
+          <span class="term-tab">1 overview</span>
+          <span class="term-tab">2 processes</span>
+          <span class="term-tab active">3 docker</span>
+        </div>
+      </div>
+      <div class="term-body">
+        <div class="filter-bar">/ <span class="ghost">filter by name, image or status</span></div>
+        <table class="ttable">
+          <thead>
+            <tr><th>NAME</th><th>IMAGE</th><th>STATUS</th><th>CPU</th><th class="num">CPU%</th><th>MEM</th><th>NET rx/tx</th><th>PIDS</th></tr>
+          </thead>
+          <tbody>
+            <tr class="sel">
+              <td>api-gateway</td><td class="cmd">rextop/gateway:3.2</td>
+              <td><span class="pill-status run">● running</span></td>
+              <td><svg class="mini-spark" viewBox="0 0 64 18"><polyline points="0,14 10,10 20,12 30,6 40,9 50,4 64,7" fill="none" stroke="#E8A23D" stroke-width="2"/></svg></td>
+              <td class="num">38.4</td><td class="num">812 MB / 2 GB</td><td class="num">2.1 / 0.6 MB/s</td><td class="num">14</td>
+            </tr>
+            <tr>
+              <td>postgres</td><td class="cmd">postgres:16-alpine</td>
+              <td><span class="pill-status run">● running</span></td>
+              <td><svg class="mini-spark" viewBox="0 0 64 18"><polyline points="0,8 10,9 20,7 30,10 40,8 50,9 64,8" fill="none" stroke="#E8A23D" stroke-width="2"/></svg></td>
+              <td class="num">6.2</td><td class="num">340 MB / 1 GB</td><td class="num">0.1 / 0.2 MB/s</td><td class="num">9</td>
+            </tr>
+            <tr>
+              <td>redis</td><td class="cmd">redis:7</td>
+              <td><span class="pill-status run">● running</span></td>
+              <td><svg class="mini-spark" viewBox="0 0 64 18"><polyline points="0,13 10,12 20,13 30,11 40,12 50,10 64,12" fill="none" stroke="#E8A23D" stroke-width="2"/></svg></td>
+              <td class="num">1.8</td><td class="num">48 MB / 512 MB</td><td class="num">0.3 / 0.3 MB/s</td><td class="num">4</td>
+            </tr>
+            <tr>
+              <td>nginx-proxy</td><td class="cmd">nginx:1.27</td>
+              <td><span class="pill-status run">● running</span></td>
+              <td><svg class="mini-spark" viewBox="0 0 64 18"><polyline points="0,15 10,14 20,15 30,13 40,14 50,15 64,13" fill="none" stroke="#E8A23D" stroke-width="2"/></svg></td>
+              <td class="num">0.9</td><td class="num">22 MB / 256 MB</td><td class="num">3.4 / 3.1 MB/s</td><td class="num">2</td>
+            </tr>
+            <tr style="opacity:.55">
+              <td>build-worker</td><td class="cmd">rextop/worker:2.0</td>
+              <td><span class="pill-status stop">○ exited (0)</span></td>
+              <td>—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="callout-row">
+          <div class="banner-ex"><b>⚠ docker unavailable —</b> docker connect failed: no such file or directory (/var/run/docker.sock). The panel degrades to this banner instead of an empty table or a crash.</div>
+          <p class="caption" style="align-self:center;">Detected once at startup with a single <code>ping()</code>, surfaced instead of hidden.</p>
+        </div>
+      </div>
+      <div class="term-foot">
+        <span><kbd>/</kbd>filter</span>
+        <span><kbd>a</kbd>all / running-only</span>
+        <span><kbd>s</kbd>stop (confirm)</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="kicker">architecture</span>
+      <h2>Two collectors, one shared state, one render loop</h2>
+    </div>
+    <p>Metrics are never fetched on the UI thread. Both collectors write into an
+      <code>Arc&lt;RwLock&lt;_&gt;&gt;</code> on their own schedule; the render
+      loop takes a read lock four times a second and the input loop takes a
+      write lock only when a key actually needs one.</p>
+    <div class="diagram-wrap">
+      <pre class="mermaid">
+flowchart TB
+  SYS["SystemMonitor::refresh\n(sysinfo — cpu, mem, net, disk, processes)"]
+  DOCK["DockerMonitor::refresh\n(bollard — list + concurrent per-container stats)"]
+  STATE1[("Arc&lt;RwLock&lt;SystemMonitor&gt;&gt;")]
+  STATE2[("Arc&lt;RwLock&lt;DockerMonitor&gt;&gt;")]
+  RENDER["render tick · 250ms\nratatui Frame"]
+  INPUT["crossterm EventStream\nApp::handle_key"]
+  UI["Overview / Processes / Docker"]
+
+  SYS -->|every 1s| STATE1
+  DOCK -->|every 2s| STATE2
+  STATE1 --> RENDER
+  STATE2 --> RENDER
+  RENDER --> UI
+  INPUT -->|kill_process| STATE1
+  INPUT -->|stop_container| STATE2
+  INPUT --> RENDER
+      </pre>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="kicker">reference</span>
+      <h2>Keybindings</h2>
+    </div>
+    <div class="kb-grid">
+      <div class="kb-group">
+        <h3>Global</h3>
+        <div class="row"><kbd>q</kbd> / <kbd>ctrl+c</kbd><span>quit</span></div>
+        <div class="row"><kbd>tab</kbd> / <kbd>shift+tab</kbd><span>cycle view</span></div>
+        <div class="row"><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd><span>jump to view</span></div>
+        <div class="row"><kbd>?</kbd><span>help overlay</span></div>
+      </div>
+      <div class="kb-group">
+        <h3>Overview</h3>
+        <div class="row"><kbd>←</kbd> <kbd>→</kbd> / <kbd>m</kbd><span>cycle focused chart</span></div>
+        <div class="row"><kbd>z</kbd><span>60s / 120s / 180s window</span></div>
+      </div>
+      <div class="kb-group">
+        <h3>Processes</h3>
+        <div class="row"><kbd>/</kbd><span>filter name / cmdline</span></div>
+        <div class="row"><kbd>c</kbd> <kbd>M</kbd> <kbd>p</kbd> <kbd>n</kbd><span>sort cpu / mem / pid / name</span></div>
+        <div class="row"><kbd>x</kbd><span>kill selected (confirm)</span></div>
+      </div>
+      <div class="kb-group">
+        <h3>Docker</h3>
+        <div class="row"><kbd>/</kbd><span>filter name / image / status</span></div>
+        <div class="row"><kbd>a</kbd><span>toggle all / running-only</span></div>
+        <div class="row"><kbd>s</kbd><span>stop selected (confirm)</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="kicker">build order</span>
+      <h2>What's written, what's next</h2>
+    </div>
+    <div class="timeline">
+      <div class="tstep done"><div class="mk">✓</div><div><div class="tt">history.rs</div><div class="dd">Fixed-capacity ring buffer backing every chart and sparkline.</div></div></div>
+      <div class="tstep done"><div class="mk">✓</div><div><div class="tt">system.rs</div><div class="dd">sysinfo collector — CPU (overall + per-core), mem/swap, net, disk, process table.</div></div></div>
+      <div class="tstep done"><div class="mk">✓</div><div><div class="tt">docker.rs</div><div class="dd">bollard collector — container list, concurrent stats, graceful "daemon unreachable" state.</div></div></div>
+      <div class="tstep next"><div class="mk">→</div><div><div class="tt">app.rs</div><div class="dd">App state, keymap, filter/sort/selection, confirm-popup gating.</div></div></div>
+      <div class="tstep todo"><div class="mk">5</div><div><div class="tt">ui/*.rs</div><div class="dd">Render functions per view — header, overview, processes, docker, help.</div></div></div>
+      <div class="tstep todo"><div class="mk">6</div><div><div class="tt">main.rs</div><div class="dd">Terminal setup/teardown, panic hook, collector tasks, the select! loop.</div></div></div>
+      <div class="tstep todo"><div class="mk">7</div><div><div class="tt">polish pass</div><div class="dd">Run it for real against a loaded Docker host, tune thresholds and colors.</div></div></div>
+    </div>
+  </section>
+
+  <footer>rextop — a Rust terminal monitor. Plan rendered for review before <code>app.rs</code> and the UI layer are written.</footer>
+
+</div>

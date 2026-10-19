@@ -22,12 +22,9 @@ impl History {
         self.samples.push_back(value);
     }
 
-    pub fn last(&self) -> f64 {
-        self.samples.back().copied().unwrap_or(0.0)
-    }
-
-    pub fn max(&self) -> f64 {
-        self.samples.iter().cloned().fold(0.0, f64::max)
+    /// Raw values, oldest first.
+    pub fn values(&self) -> Vec<f64> {
+        self.samples.iter().copied().collect()
     }
 
     /// Points formatted for ratatui's `Chart`/`Dataset`: (x, y) pairs, oldest first.
@@ -42,13 +39,5 @@ impl History {
     /// Values only, oldest first, for the `Sparkline` widget (expects u64).
     pub fn as_u64(&self, scale: f64) -> Vec<u64> {
         self.samples.iter().map(|v| (*v * scale) as u64).collect()
-    }
-
-    pub fn len(&self) -> usize {
-        self.samples.len()
-    }
-
-    pub fn capacity(&self) -> usize {
-        self.capacity
     }
 }
