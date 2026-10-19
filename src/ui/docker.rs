@@ -24,6 +24,17 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, docker: &DockerMonitor) 
     let filtered = app.filtered_containers(docker);
     let selected = app.docker_selected.min(filtered.len().saturating_sub(1));
 
+    // Non-data rows inside the bordered block: top+bottom border (2) + header (1).
+    let visible_rows = rows[1].height.saturating_sub(3) as usize;
+    let offset = if filtered.len() <= visible_rows || visible_rows == 0 {
+        0
+    } else {
+        selected
+            .saturating_sub(visible_rows / 2)
+            .min(filtered.len() - visible_rows)
+    };
+    let window_end = (offset + visible_rows).min(filtered.len());
+
     let header = Row::new(vec![
         Cell::from("NAME"),
         Cell::from("IMAGE"),
@@ -36,11 +47,11 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, docker: &DockerMonitor) 
     ])
     .style(Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD));
 
-    let body_rows: Vec<Row> = filtered
+    let body_rows: Vec<Row> = filtered[offset..window_end]
         .iter()
         .enumerate()
         .map(|(i, c)| {
-            let style = if i == selected {
+            let style = if offset + i == selected {
                 Style::default().bg(Color::Rgb(30, 38, 50))
             } else if !c.running {
                 Style::default().fg(Color::DarkGray)
@@ -54,8 +65,8 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, docker: &DockerMonitor) 
             };
             let spark = text_sparkline(&c.cpu_history.values(), 10);
             Row::new(vec![
-                Cell::from(c.name.clone()),
-                Cell::from(c.image.clone()),
+                Cell::from(c.name.as_str()),
+                Cell::from(c.image.as_str()),
                 Cell::from(status_span),
                 Cell::from(spark).style(Style::default().fg(load_color(c.cpu_pct))),
                 Cell::from(format!("{:.1}", c.cpu_pct)),
@@ -110,8 +121,8 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, docker: &DockerMonitor) 
 fn render_unavailable(frame: &mut Frame, area: Rect, docker: &DockerMonitor) {
     let msg = docker
         .error
-        .clone()
-        .unwrap_or_else(|| "docker daemon unreachable".to_string());
+        .as_deref()
+        .unwrap_or("docker daemon unreachable");
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Rgb(226, 76, 76)))
