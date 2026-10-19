@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
+use clap::Parser;
 use crossterm::event::{Event, EventStream, KeyEventKind};
 use futures_util::StreamExt;
 use tokio::sync::RwLock;
@@ -17,8 +18,15 @@ use app::{App, Signal};
 use docker::DockerMonitor;
 use system::SystemMonitor;
 
+/// htop, but with time-series charts, gauges, and Docker filtering.
+#[derive(Parser)]
+#[command(name = "rtop", version, about)]
+struct Cli;
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    Cli::parse();
+
     let sys = Arc::new(RwLock::new(SystemMonitor::new()));
     let docker = Arc::new(RwLock::new(DockerMonitor::connect().await));
 
