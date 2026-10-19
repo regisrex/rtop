@@ -1,0 +1,14 @@
+[package]
+name = "rextop"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.104"
+bollard = "0.21.1"
+clap = { version = "4.6.7", features = ["derive"] }
+crossterm = { version = "0.29.0", features = ["event-stream"] }
+futures-util = "0.3.34"
+ratatui = "0.30.2"
+sysinfo = "0.39.6"
+tokio = { version = "1.54.0", features = ["macros", "rt-multi-thread", "time", "sync"] }
