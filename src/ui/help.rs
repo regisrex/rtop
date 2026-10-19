@@ -5,10 +5,10 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 pub fn render(frame: &mut Frame, area: Rect) {
-    let popup = centered(area, 56, 20);
+    let popup = centered(area, 58, 22);
     frame.render_widget(Clear, popup);
 
-    let key = |k: &'static str| Span::styled(format!("{k:<12}"), Style::default().fg(Color::Rgb(232, 162, 61)));
+    let key = |k: &'static str| Span::styled(format!("{k:<16}"), Style::default().fg(Color::Rgb(232, 162, 61)));
     let desc = |d: &'static str| Span::raw(d);
     let line = |k, d| Line::from(vec![key(k), desc(d)]);
 

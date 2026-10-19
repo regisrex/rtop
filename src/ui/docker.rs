@@ -116,7 +116,7 @@ fn render_unavailable(frame: &mut Frame, area: Rect, docker: &DockerMonitor) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Rgb(226, 76, 76)))
         .title(" docker ");
-    let text = format!("⚠ {msg}\n\nNo daemon detected at startup — this panel will stay empty until rextop is restarted with Docker reachable.");
+    let text = format!("⚠ {msg}\n\nNo daemon detected at startup — this panel will stay empty until rtop is restarted with Docker reachable.");
     let p = Paragraph::new(text)
         .block(block)
         .style(Style::default().fg(Color::Rgb(243, 185, 185)))

@@ -47,7 +47,11 @@ pub struct DockerMonitor {
 
 impl DockerMonitor {
     pub async fn connect() -> Self {
-        match Docker::connect_with_defaults() {
+        let connection = match resolve_docker_host() {
+            Some(host) => Docker::connect_with_host(&host),
+            None => Docker::connect_with_defaults(),
+        };
+        match connection {
             Ok(docker) => match docker.ping().await {
                 Ok(_) => Self {
                     docker: Some(docker),
@@ -199,6 +203,48 @@ impl DockerMonitor {
         }
         Ok(())
     }
+}
+
+/// Mirrors the Docker CLI's connection resolution: `DOCKER_HOST` wins if set,
+/// otherwise fall back to whatever `docker context` has active (colima,
+/// OrbStack, Rancher Desktop, etc. all configure themselves this way instead
+/// of exporting `DOCKER_HOST`, so without this the panel would stay "docker
+/// unreachable" on most non-Docker-Desktop setups even with a daemon running).
+fn resolve_docker_host() -> Option<String> {
+    if let Ok(host) = std::env::var("DOCKER_HOST")
+        && !host.is_empty()
+    {
+        return None; // let bollard's own DOCKER_HOST handling take it.
+    }
+
+    let home = std::env::var("HOME").ok()?;
+    let config: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(format!("{home}/.docker/config.json")).ok()?)
+            .ok()?;
+    let current = config.get("currentContext")?.as_str()?;
+    if current.is_empty() || current == "default" {
+        return None;
+    }
+
+    let contexts_dir = format!("{home}/.docker/contexts/meta");
+    for entry in std::fs::read_dir(contexts_dir).ok()? {
+        let meta_path = entry.ok()?.path().join("meta.json");
+        let Ok(content) = std::fs::read_to_string(&meta_path) else {
+            continue;
+        };
+        let Ok(meta) = serde_json::from_str::<serde_json::Value>(&content) else {
+            continue;
+        };
+        if meta.get("Name").and_then(|n| n.as_str()) == Some(current) {
+            return meta
+                .get("Endpoints")?
+                .get("docker")?
+                .get("Host")?
+                .as_str()
+                .map(str::to_string);
+        }
+    }
+    None
 }
 
 async fn fetch_stats(docker: &Docker, id: &str) -> Option<RawStats> {
