@@ -6,10 +6,11 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Axis, Block, Borders, Chart, Dataset, Gauge, GraphType, Paragraph, Sparkline};
 
 use crate::app::{App, ChartMetric};
+use crate::gpu::GpuMonitor;
 use crate::system::SystemMonitor;
 use crate::ui::util::{format_bytes, format_rate, load_color};
 
-pub fn render(frame: &mut Frame, area: Rect, app: &App, sys: &SystemMonitor) {
+pub fn render(frame: &mut Frame, area: Rect, app: &App, sys: &SystemMonitor, gpu: &GpuMonitor) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -23,9 +24,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, sys: &SystemMonitor) {
 
     render_header(frame, rows[0], sys);
     render_cores(frame, rows[1], sys);
-    render_gauges(frame, rows[2], sys);
-    render_focused_chart(frame, rows[3], app, sys);
-    render_spark_strip(frame, rows[4], app, sys);
+    render_gauges(frame, rows[2], sys, gpu);
+    render_focused_chart(frame, rows[3], app, sys, gpu);
+    render_spark_strip(frame, rows[4], app, sys, gpu);
 }
 
 fn render_header(frame: &mut Frame, area: Rect, sys: &SystemMonitor) {
@@ -106,16 +107,7 @@ fn render_cores(frame: &mut Frame, area: Rect, sys: &SystemMonitor) {
     }
 }
 
-fn render_gauges(frame: &mut Frame, area: Rect, sys: &SystemMonitor) {
-    let cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(34),
-            Constraint::Percentage(33),
-            Constraint::Percentage(33),
-        ])
-        .split(area);
-
+fn render_gauges(frame: &mut Frame, area: Rect, sys: &SystemMonitor, gpu: &GpuMonitor) {
     let cpu_pct = sys.overall_cpu as f64;
     let mem_pct = if sys.mem_total > 0 {
         sys.mem_used as f64 / sys.mem_total as f64 * 100.0
@@ -128,34 +120,69 @@ fn render_gauges(frame: &mut Frame, area: Rect, sys: &SystemMonitor) {
         0.0
     };
 
-    let specs = [
+    let mut specs = vec![
         (
-            "CPU",
-            cpu_pct,
+            "CPU".to_string(),
+            Some(cpu_pct),
             format!("{cpu_pct:.1}%  ({} cores)", sys.core_count),
         ),
         (
-            "MEM",
-            mem_pct,
+            "MEM".to_string(),
+            Some(mem_pct),
             format!("{} / {}", format_bytes(sys.mem_used), format_bytes(sys.mem_total)),
         ),
         (
-            "SWAP",
-            swap_pct,
+            "SWAP".to_string(),
+            Some(swap_pct),
             format!("{} / {}", format_bytes(sys.swap_used), format_bytes(sys.swap_total)),
         ),
     ];
 
+    specs.push(match gpu.primary_gpu() {
+        Some(g) => (
+            format!("{} ({})", g.name, g.vendor.label()),
+            g.util_pct,
+            match (g.util_pct, g.mem_used, g.mem_total) {
+                (Some(p), Some(used), Some(total)) => {
+                    format!("{p:.1}%  {} / {}", format_bytes(used), format_bytes(total))
+                }
+                (Some(p), Some(used), None) => format!("{p:.1}%  {}", format_bytes(used)),
+                (Some(p), None, _) => format!("{p:.1}%"),
+                (None, _, _) => "n/a".to_string(),
+            },
+        ),
+        None => ("GPU".to_string(), None, "n/a".to_string()),
+    });
+
+    specs.push(match &gpu.npu {
+        Some(n) => (
+            n.name.clone(),
+            n.util_pct_approx,
+            match (n.util_pct_approx, n.power_w) {
+                (Some(p), Some(w)) => format!("~{p:.0}%  {w:.1}W"),
+                (None, Some(w)) => format!("{w:.1}W"),
+                _ => "n/a".to_string(),
+            },
+        ),
+        None => ("NPU".to_string(), None, "n/a".to_string()),
+    });
+
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(vec![Constraint::Ratio(1, specs.len() as u32); specs.len()])
+        .split(area);
+
     for (i, (title, pct, detail)) in specs.into_iter().enumerate() {
+        let color = pct.map(load_color).unwrap_or(Color::DarkGray);
         let block = Block::default()
             .borders(Borders::ALL)
             .title(format!(" {title} "))
             .border_style(Style::default().fg(Color::DarkGray));
         let gauge = Gauge::default()
             .block(block)
-            .ratio((pct / 100.0).clamp(0.0, 1.0))
+            .ratio((pct.unwrap_or(0.0) / 100.0).clamp(0.0, 1.0))
             .label(detail)
-            .gauge_style(Style::default().fg(load_color(pct)));
+            .gauge_style(Style::default().fg(color));
         frame.render_widget(gauge, cols[i]);
     }
 }
@@ -173,7 +200,7 @@ struct FocusedSeries {
     reading: String,
 }
 
-fn focused_series(app: &App, sys: &SystemMonitor) -> FocusedSeries {
+fn focused_series(app: &App, sys: &SystemMonitor, gpu: &GpuMonitor) -> FocusedSeries {
     let window = app.window_len;
     match app.chart_metric {
         ChartMetric::Cpu => FocusedSeries {
@@ -249,6 +276,41 @@ fn focused_series(app: &App, sys: &SystemMonitor) -> FocusedSeries {
                 ),
             }
         }
+        ChartMetric::Gpu => {
+            let reading = match gpu.primary_gpu().and_then(|g| g.util_pct) {
+                Some(p) => format!("{p:.1}%"),
+                None => "n/a".to_string(),
+            };
+            FocusedSeries {
+                unit: "%",
+                series: vec![Series {
+                    name: "gpu",
+                    color: Color::Rgb(232, 162, 61),
+                    points: windowed(&gpu.gpu_history.as_points(), window),
+                }],
+                y_max: 100.0,
+                reading,
+            }
+        }
+        ChartMetric::Npu => {
+            let reading = match &gpu.npu {
+                Some(n) => match (n.util_pct_approx, n.power_w) {
+                    (Some(p), Some(w)) => format!("~{p:.0}%  {w:.1}W"),
+                    _ => "n/a".to_string(),
+                },
+                None => "n/a".to_string(),
+            };
+            FocusedSeries {
+                unit: "%",
+                series: vec![Series {
+                    name: "npu",
+                    color: Color::Rgb(139, 127, 214),
+                    points: windowed(&gpu.npu_history.as_points(), window),
+                }],
+                y_max: 100.0,
+                reading,
+            }
+        }
     }
 }
 
@@ -261,13 +323,15 @@ fn windowed(points: &[(f64, f64)], window: usize) -> Vec<(f64, f64)> {
         .collect()
 }
 
-fn render_focused_chart(frame: &mut Frame, area: Rect, app: &App, sys: &SystemMonitor) {
-    let data = focused_series(app, sys);
+fn render_focused_chart(frame: &mut Frame, area: Rect, app: &App, sys: &SystemMonitor, gpu: &GpuMonitor) {
+    let data = focused_series(app, sys, gpu);
     let title = match app.chart_metric {
         ChartMetric::Cpu => "CPU",
         ChartMetric::Memory => "MEMORY",
         ChartMetric::Network => "NETWORK",
         ChartMetric::Disk => "DISK I/O",
+        ChartMetric::Gpu => "GPU",
+        ChartMetric::Npu => "NPU (approx, Apple Neural Engine)",
     };
 
     let datasets: Vec<Dataset> = data
@@ -308,12 +372,14 @@ fn render_focused_chart(frame: &mut Frame, area: Rect, app: &App, sys: &SystemMo
     frame.render_widget(chart, area);
 }
 
-fn render_spark_strip(frame: &mut Frame, area: Rect, app: &App, sys: &SystemMonitor) {
+fn render_spark_strip(frame: &mut Frame, area: Rect, app: &App, sys: &SystemMonitor, gpu: &GpuMonitor) {
     let metrics = [
         ChartMetric::Cpu,
         ChartMetric::Memory,
         ChartMetric::Network,
         ChartMetric::Disk,
+        ChartMetric::Gpu,
+        ChartMetric::Npu,
     ];
     let others: Vec<ChartMetric> = metrics.into_iter().filter(|m| *m != app.chart_metric).collect();
 
@@ -354,6 +420,24 @@ fn render_spark_strip(frame: &mut Frame, area: Rect, app: &App, sys: &SystemMoni
                 format!("{}/s", format_bytes((sys.disk_read_bps + sys.disk_write_bps) as u64)),
                 sys.disk_write_history.as_u64(1.0),
                 Color::Rgb(226, 105, 138),
+            ),
+            ChartMetric::Gpu => (
+                "GPU",
+                match gpu.primary_gpu().and_then(|g| g.util_pct) {
+                    Some(p) => format!("{p:.1}%"),
+                    None => "n/a".to_string(),
+                },
+                gpu.gpu_history.as_u64(1.0),
+                Color::Rgb(232, 162, 61),
+            ),
+            ChartMetric::Npu => (
+                "NPU",
+                match gpu.npu.as_ref().and_then(|n| n.util_pct_approx) {
+                    Some(p) => format!("~{p:.0}%"),
+                    None => "n/a".to_string(),
+                },
+                gpu.npu_history.as_u64(1.0),
+                Color::Rgb(139, 127, 214),
             ),
         };
 

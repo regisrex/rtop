@@ -20,6 +20,8 @@ pub enum ChartMetric {
     Memory,
     Network,
     Disk,
+    Gpu,
+    Npu,
 }
 
 impl ChartMetric {
@@ -28,16 +30,20 @@ impl ChartMetric {
             ChartMetric::Cpu => ChartMetric::Memory,
             ChartMetric::Memory => ChartMetric::Network,
             ChartMetric::Network => ChartMetric::Disk,
-            ChartMetric::Disk => ChartMetric::Cpu,
+            ChartMetric::Disk => ChartMetric::Gpu,
+            ChartMetric::Gpu => ChartMetric::Npu,
+            ChartMetric::Npu => ChartMetric::Cpu,
         }
     }
 
     pub fn prev(self) -> Self {
         match self {
-            ChartMetric::Cpu => ChartMetric::Disk,
+            ChartMetric::Cpu => ChartMetric::Npu,
             ChartMetric::Memory => ChartMetric::Cpu,
             ChartMetric::Network => ChartMetric::Memory,
             ChartMetric::Disk => ChartMetric::Network,
+            ChartMetric::Gpu => ChartMetric::Disk,
+            ChartMetric::Npu => ChartMetric::Gpu,
         }
     }
 }

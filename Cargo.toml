@@ -13,3 +13,11 @@ ratatui = "0.30.2"
 serde_json = "1.0.154"
 sysinfo = "0.39.6"
 tokio = { version = "1.54.0", features = ["macros", "rt-multi-thread", "time", "sync"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation-sys = "0.8.7"
+io-kit-sys = "0.5.0"
+libc = "0.2.191"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+nvml-wrapper = "0.13.0"

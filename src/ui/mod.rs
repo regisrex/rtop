@@ -12,12 +12,19 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Tabs};
 
 use crate::app::{App, PendingAction, Tab};
 use crate::docker::DockerMonitor;
+use crate::gpu::GpuMonitor;
 use crate::system::SystemMonitor;
 
 const ACCENT: Color = Color::Rgb(232, 162, 61);
 const DANGER: Color = Color::Rgb(226, 76, 76);
 
-pub fn draw(frame: &mut Frame, app: &App, sys: &SystemMonitor, docker: &DockerMonitor) {
+pub fn draw(
+    frame: &mut Frame,
+    app: &App,
+    sys: &SystemMonitor,
+    docker: &DockerMonitor,
+    gpu: &GpuMonitor,
+) {
     let area = frame.area();
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -31,7 +38,7 @@ pub fn draw(frame: &mut Frame, app: &App, sys: &SystemMonitor, docker: &DockerMo
     let inner = rows[1];
 
     match app.tab {
-        Tab::Overview => overview::render(frame, inner, app, sys),
+        Tab::Overview => overview::render(frame, inner, app, sys, gpu),
         Tab::Processes => processes::render(frame, inner, app, sys),
         Tab::Docker => docker::render(frame, inner, app, docker),
     }

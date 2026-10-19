@@ -1,5 +1,6 @@
 mod app;
 mod docker;
+mod gpu;
 mod history;
 mod system;
 mod ui;
@@ -16,6 +17,7 @@ use tokio::time::interval;
 
 use app::{App, Signal};
 use docker::DockerMonitor;
+use gpu::GpuMonitor;
 use system::SystemMonitor;
 
 /// htop, but with time-series charts, gauges, and Docker filtering.
@@ -29,12 +31,14 @@ async fn main() -> Result<()> {
 
     let sys = Arc::new(RwLock::new(SystemMonitor::new()));
     let docker = Arc::new(RwLock::new(DockerMonitor::connect().await));
+    let gpu = Arc::new(RwLock::new(GpuMonitor::new()));
 
     spawn_sys_collector(Arc::clone(&sys));
     spawn_docker_collector(Arc::clone(&docker));
+    spawn_gpu_collector(Arc::clone(&gpu));
 
     let mut terminal = ratatui::init();
-    let result = run(&mut terminal, sys, docker).await;
+    let result = run(&mut terminal, sys, docker, gpu).await;
     ratatui::restore();
     result
 }
@@ -63,10 +67,20 @@ fn spawn_docker_collector(docker: Arc<RwLock<DockerMonitor>>) {
     });
 }
 
+fn spawn_gpu_collector(gpu: Arc<RwLock<GpuMonitor>>) {
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            gpu.write().await.refresh();
+        }
+    });
+}
+
 async fn run(
     terminal: &mut ratatui::DefaultTerminal,
     sys: Arc<RwLock<SystemMonitor>>,
     docker: Arc<RwLock<DockerMonitor>>,
+    gpu: Arc<RwLock<GpuMonitor>>,
 ) -> Result<()> {
     let mut app = App::new();
     let mut events = EventStream::new();
@@ -77,7 +91,8 @@ async fn run(
             _ = render_tick.tick() => {
                 let sys_guard = sys.read().await;
                 let docker_guard = docker.read().await;
-                terminal.draw(|f| ui::draw(f, &app, &sys_guard, &docker_guard))?;
+                let gpu_guard = gpu.read().await;
+                terminal.draw(|f| ui::draw(f, &app, &sys_guard, &docker_guard, &gpu_guard))?;
             }
             maybe_event = events.next() => {
                 match maybe_event {
