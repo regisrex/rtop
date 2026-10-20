@@ -1,6 +1,6 @@
 [package]
 name = "rtop"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "htop, but with time-series charts, gauges, GPU/NPU tracking, and Docker filtering"
 license = "MIT"
