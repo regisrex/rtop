@@ -1,0 +1,138 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-14
+            asset: macos-arm64
+            deb: false
+          - target: x86_64-apple-darwin
+            os: macos-14
+            asset: macos-x86_64
+            deb: false
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            asset: linux-x86_64
+            deb: true
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            asset: linux-arm64
+            deb: true
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package tarball
+        run: |
+          mkdir -p dist
+          tar -czf "dist/rtop-${{ github.ref_name }}-${{ matrix.asset }}.tar.gz" \
+            -C "target/${{ matrix.target }}/release" rtop
+
+      - name: Install cargo-deb
+        if: matrix.deb
+        run: cargo install cargo-deb --locked
+
+      - name: Build .deb
+        if: matrix.deb
+        run: cargo deb --target ${{ matrix.target }} --no-build --output dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rtop-${{ matrix.asset }}
+          path: dist/*
+          if-no-files-found: error
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+
+  apt-repo:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rtop-linux-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Import signing key
+        run: echo "${{ secrets.APT_GPG_PRIVATE_KEY }}" | gpg --batch --import
+
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Install repo tools
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev
+
+      - name: Build apt repository
+        working-directory: gh-pages
+        env:
+          KEYID: ${{ secrets.APT_GPG_KEY_ID }}
+        run: |
+          set -eu
+          mkdir -p apt/pool/main/r/rtop
+          cp ../artifacts/*.deb apt/pool/main/r/rtop/
+          cd apt
+          mkdir -p dists/stable/main/binary-amd64 dists/stable/main/binary-arm64
+          dpkg-scanpackages --arch amd64 pool/ > dists/stable/main/binary-amd64/Packages
+          gzip -k9f dists/stable/main/binary-amd64/Packages
+          dpkg-scanpackages --arch arm64 pool/ > dists/stable/main/binary-arm64/Packages
+          gzip -k9f dists/stable/main/binary-arm64/Packages
+          cd dists/stable
+          {
+            echo "Origin: rtop"
+            echo "Label: rtop"
+            echo "Suite: stable"
+            echo "Codename: stable"
+            echo "Architectures: amd64 arm64"
+            echo "Components: main"
+            echo "Description: rtop apt repository"
+          } > Release
+          apt-ftparchive release . >> Release
+          gpg --batch --yes --default-key "$KEYID" -abs -o Release.gpg Release
+          gpg --batch --yes --default-key "$KEYID" --clearsign -o InRelease Release
+
+      - name: Publish gh-pages
+        working-directory: gh-pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --staged --quiet && echo "nothing to publish" || git commit -m "Publish apt repo for ${{ github.ref_name }}"
+          git push

@@ -2,6 +2,26 @@
 name = "rtop"
 version = "0.1.0"
 edition = "2024"
+description = "htop, but with time-series charts, gauges, GPU/NPU tracking, and Docker filtering"
+license = "MIT"
+repository = "https://github.com/regisrex/rtop"
+readme = "README.md"
+authors = ["regisrex"]
+
+[package.metadata.deb]
+maintainer = "regisrex <regisrex@users.noreply.github.com>"
+copyright = "2026, regisrex"
+license-file = ["LICENSE", "0"]
+extended-description = """\
+rtop is a terminal system monitor like htop, but with live time-series \
+charts for CPU, memory, network, disk, GPU and NPU usage, color-graded \
+gauges, and a Docker container panel with filtering."""
+depends = "$auto"
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/rtop", "usr/bin/", "755"],
+]
 
 [dependencies]
 anyhow = "1.0.104"
