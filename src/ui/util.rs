@@ -1,4 +1,10 @@
-use ratatui::style::Color;
+use ratatui::style::{Color, Style};
+use ratatui::text::Span;
+
+/// Dim, theme-independent track color for the unfilled portion of a bar —
+/// rendered explicitly rather than left blank, so every bar always shows its
+/// full 0-100% extent regardless of the current value.
+pub const TRACK: Color = Color::Rgb(42, 52, 66);
 
 /// Green -> amber -> red based on load percentage, used for every gauge/meter.
 pub fn load_color(pct: f64) -> Color {
@@ -9,6 +15,33 @@ pub fn load_color(pct: f64) -> Color {
     } else {
         Color::Rgb(226, 76, 76)
     }
+}
+
+/// A fixed-width horizontal bar: `width` characters wide, `pct` of it filled
+/// with `color`, the remainder drawn as a visible dim track — never just
+/// blank space — so the bar's full range reads clearly at any value,
+/// including 0%. Used instead of `ratatui::widgets::Gauge` wherever several
+/// bars need to line up in a tight grid: `Gauge` centers its label within the
+/// *whole* widget, which looks fine at a high ratio but strands the label far
+/// from a tiny fill sliver at a low one.
+pub fn track_bar<'a>(width: u16, pct: Option<f64>, color: Color) -> Vec<Span<'a>> {
+    let width = width.max(1) as usize;
+    let filled = pct
+        .map(|p| (((p / 100.0).clamp(0.0, 1.0)) * width as f64).round() as usize)
+        .unwrap_or(0)
+        .min(width);
+
+    let mut spans = Vec::with_capacity(2);
+    if filled > 0 {
+        spans.push(Span::styled("█".repeat(filled), Style::default().fg(color)));
+    }
+    if width > filled {
+        spans.push(Span::styled(
+            "░".repeat(width - filled),
+            Style::default().fg(TRACK),
+        ));
+    }
+    spans
 }
 
 pub fn format_bytes(bytes: u64) -> String {

@@ -3,19 +3,19 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::symbols;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Axis, Block, Borders, Chart, Dataset, Gauge, GraphType, Paragraph, Sparkline};
+use ratatui::widgets::{Axis, Block, Borders, Chart, Dataset, GraphType, LegendPosition, Paragraph, Sparkline};
 
 use crate::app::{App, ChartMetric};
 use crate::gpu::GpuMonitor;
 use crate::system::SystemMonitor;
-use crate::ui::util::{format_bytes, format_rate, load_color};
+use crate::ui::util::{TRACK, format_bytes, format_rate, load_color, track_bar};
 
 pub fn render(frame: &mut Frame, area: Rect, app: &App, sys: &SystemMonitor, gpu: &GpuMonitor) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(2),
-            Constraint::Length(core_rows(sys.core_count) as u16 * 2),
+            Constraint::Length(core_rows(sys.core_count) as u16 + 2),
             Constraint::Length(5),
             Constraint::Min(10),
             Constraint::Length(6),
@@ -32,7 +32,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, sys: &SystemMonitor, gpu
 fn render_header(frame: &mut Frame, area: Rect, sys: &SystemMonitor) {
     let uptime = sysinfo::System::uptime();
     let load = sysinfo::System::load_average();
-    let line = Line::from(vec![
+    let dim = Style::default().fg(Color::DarkGray);
+
+    let host_line = Line::from(vec![
         Span::styled(
             sys.hostname.clone(),
             Style::default()
@@ -42,19 +44,28 @@ fn render_header(frame: &mut Frame, area: Rect, sys: &SystemMonitor) {
         Span::raw("  "),
         Span::raw(format!("{} ({})", sys.os_version, sys.kernel_version)),
         Span::raw("   "),
-        Span::styled(sys.cpu_brand.clone(), Style::default().fg(Color::DarkGray)),
+        Span::styled(sys.cpu_brand.clone(), dim),
+        Span::raw("   "),
+        Span::styled(format!("up {}", format_uptime(uptime)), dim),
         Span::raw("   "),
         Span::styled(
-            format!("up {}", format_uptime(uptime)),
-            Style::default().fg(Color::DarkGray),
-        ),
-        Span::raw("   "),
-        Span::styled(
-            format!("load {:.2} {:.2} {:.2}", load.one, load.five, load.fifteen),
-            Style::default().fg(Color::DarkGray),
+            format!(
+                "load (1m/5m/15m) {:.2} {:.2} {:.2}",
+                load.one, load.five, load.fifteen
+            ),
+            dim,
         ),
     ]);
-    frame.render_widget(Paragraph::new(line), area);
+
+    // A one-line explanation of what's on screen and how to drive it — the
+    // same kind of caption every other tab gets from its own keybinding bar,
+    // but Overview's bar is already busy, so it gets its own line up top.
+    let caption = Line::from(Span::styled(
+        "per-core load, then recent history below — ←/→ picks the focused chart, z its window",
+        dim,
+    ));
+
+    frame.render_widget(Paragraph::new(vec![host_line, caption]), area);
 }
 
 fn format_uptime(secs: u64) -> String {
@@ -77,14 +88,31 @@ fn core_cols(core_count: usize) -> usize {
     core_count.clamp(1, 8)
 }
 
+/// Per-core load. Each core gets one fixed-width line: a left-aligned
+/// "C{n} {pct}%" label followed by its own track bar, so the grid stays
+/// aligned into neat columns no matter how much any one core's bar fills —
+/// unlike `ratatui::widgets::Gauge`, whose label centers in the *whole*
+/// widget and ends up stranded far from a thin low-percentage bar.
 fn render_cores(frame: &mut Frame, area: Rect, sys: &SystemMonitor) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray))
+        .title(" cpu cores ")
+        .title_bottom(
+            Line::from(format!("{} physical threads", sys.core_count))
+                .right_aligned()
+                .style(Style::default().fg(Color::DarkGray)),
+        );
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
     let cols = core_cols(sys.core_count);
     let rows = core_rows(sys.core_count);
 
     let row_areas = Layout::default()
         .direction(Direction::Vertical)
-        .constraints(vec![Constraint::Length(2); rows])
-        .split(area);
+        .constraints(vec![Constraint::Length(1); rows])
+        .split(inner);
 
     for r in 0..rows {
         let col_areas = Layout::default()
@@ -96,13 +124,15 @@ fn render_cores(frame: &mut Frame, area: Rect, sys: &SystemMonitor) {
             if idx >= sys.per_core_cpu.len() {
                 continue;
             }
-            let pct = sys.per_core_cpu[idx];
-            let gauge = Gauge::default()
-                .block(Block::default())
-                .ratio((pct as f64 / 100.0).clamp(0.0, 1.0))
-                .label(format!("C{idx} {pct:>3.0}%"))
-                .gauge_style(Style::default().fg(load_color(pct as f64)));
-            frame.render_widget(gauge, col_areas[c]);
+            let pct = sys.per_core_cpu[idx] as f64;
+            let color = load_color(pct);
+            let label = format!("{:<3} {:>3.0}% ", format!("C{idx}"), pct);
+            let bar_width = col_areas[c].width.saturating_sub(label.len() as u16 + 1);
+
+            let mut spans = vec![Span::styled(label, Style::default().fg(color))];
+            spans.extend(track_bar(bar_width, Some(pct), color));
+
+            frame.render_widget(Paragraph::new(Line::from(spans)), col_areas[c]);
         }
     }
 }
@@ -172,18 +202,38 @@ fn render_gauges(frame: &mut Frame, area: Rect, sys: &SystemMonitor, gpu: &GpuMo
         .constraints(vec![Constraint::Ratio(1, specs.len() as u32); specs.len()])
         .split(area);
 
+    // Detail text on its own line, the bar on the one below it — rather than
+    // ratatui::widgets::Gauge's single line with the label centered over the
+    // bar, which reads fine at a high percentage but strands the text far
+    // from the fill at a low one (see GPU/NPU, usually in single digits).
     for (i, (title, pct, detail)) in specs.into_iter().enumerate() {
-        let color = pct.map(load_color).unwrap_or(Color::DarkGray);
+        let color = pct.map(load_color).unwrap_or(TRACK);
         let block = Block::default()
             .borders(Borders::ALL)
             .title(format!(" {title} "))
             .border_style(Style::default().fg(Color::DarkGray));
-        let gauge = Gauge::default()
-            .block(block)
-            .ratio((pct.unwrap_or(0.0) / 100.0).clamp(0.0, 1.0))
-            .label(detail)
-            .gauge_style(Style::default().fg(color));
-        frame.render_widget(gauge, cols[i]);
+        let inner = block.inner(cols[i]);
+        frame.render_widget(block, cols[i]);
+
+        let content = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Length(1)])
+            .flex(ratatui::layout::Flex::Center)
+            .split(inner);
+
+        let detail_style = if pct.is_some() {
+            Style::default()
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(detail).style(detail_style)),
+            content[0],
+        );
+        frame.render_widget(
+            Paragraph::new(Line::from(track_bar(inner.width, pct, color))),
+            content[1],
+        );
     }
 }
 
@@ -348,28 +398,65 @@ fn render_focused_chart(frame: &mut Frame, area: Rect, app: &App, sys: &SystemMo
         .collect();
 
     let x_max = (app.window_len.saturating_sub(1)) as f64;
+    let dim = Style::default().fg(Color::DarkGray);
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(format!(
-            " {title} · last {}s ",
-            app.window_len
-        ))
-        .title_bottom(Line::from(data.reading).right_aligned());
+        .border_style(dim)
+        .title(format!(" {title} · last {} ", format_duration(app.window_len)))
+        .title_bottom(
+            Line::from(data.reading)
+                .right_aligned()
+                .style(Style::default().add_modifier(Modifier::BOLD)),
+        );
+
+    // A legend only earns its keep when there's more than one series to
+    // tell apart (network rx/tx, disk read/write) — for a single line it's
+    // dead weight that can clip against the border, so it's turned off.
+    let legend_position = if data.series.len() > 1 {
+        Some(LegendPosition::TopRight)
+    } else {
+        None
+    };
+
+    let y_label = |v: f64| match data.unit {
+        "%" => format!("{v:.0}%"),
+        _ => format_rate(v),
+    };
 
     let chart = Chart::new(datasets)
         .block(block)
-        .x_axis(Axis::default().bounds([0.0, x_max.max(1.0)]))
+        .legend_position(legend_position)
+        .x_axis(
+            Axis::default()
+                .style(dim)
+                .bounds([0.0, x_max.max(1.0)])
+                .labels(vec![
+                    Line::from(format!("-{}", format_duration(app.window_len))),
+                    Line::from(format!("-{}", format_duration(app.window_len / 2))).centered(),
+                    Line::from("now").right_aligned(),
+                ]),
+        )
         .y_axis(
             Axis::default()
+                .style(dim)
                 .bounds([0.0, data.y_max.max(1.0)])
                 .labels(vec![
-                    Line::from("0"),
-                    Line::from(format!("{:.0}", data.y_max / 2.0)),
-                    Line::from(format!("{:.0}{}", data.y_max, data.unit)),
+                    Line::from(y_label(0.0)),
+                    Line::from(y_label(data.y_max / 2.0)),
+                    Line::from(y_label(data.y_max)),
                 ]),
         );
     frame.render_widget(chart, area);
+}
+
+/// Formats a sample count (1 sample/s) as a short duration label: "45s",
+/// "2m", "3m".
+fn format_duration(secs: usize) -> String {
+    if secs < 60 {
+        format!("{secs}s")
+    } else {
+        format!("{}m", secs / 60)
+    }
 }
 
 fn render_spark_strip(frame: &mut Frame, area: Rect, app: &App, sys: &SystemMonitor, gpu: &GpuMonitor) {
