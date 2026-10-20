@@ -1,0 +1,20 @@
+Package: rtop
+Version: 0.1.0-1
+Architecture: arm64
+Maintainer: regisrex <regisrex@users.noreply.github.com>
+Installed-Size: 3403
+Depends: libc6 (>= 2.39)
+Filename: pool/main/r/rtop/rtop_0.1.0-1_arm64.deb
+Size: 1039752
+MD5sum: 9832cf536a707e561436a87576614242
+SHA1: b6709cf8bd3e3999e29da0362db0b528953cf6d8
+SHA256: d923fe377f3347747c691d6e93a7ffc20f75fe6a9c320bd37951336afdf8f8a4
+Section: utils
+Priority: optional
+Homepage: https://github.com/regisrex/rtop
+Description: htop, but with time-series charts, gauges, GPU/NPU tracking, and Docker
+ filtering
+ rtop is a terminal system monitor like htop, but with live time-series charts
+ for CPU, memory, network, disk, GPU and NPU usage, color-graded gauges, and a
+ Docker container panel with filtering.
+
