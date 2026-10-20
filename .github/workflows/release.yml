@@ -18,34 +18,63 @@ jobs:
             os: macos-14
             asset: macos-arm64
             deb: false
+            release_dir: target/aarch64-apple-darwin/release
           - target: x86_64-apple-darwin
             os: macos-14
             asset: macos-x86_64
             deb: false
+            release_dir: target/x86_64-apple-darwin/release
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             asset: linux-x86_64
             deb: true
+            release_dir: target/release
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
             asset: linux-arm64
             deb: true
+            release_dir: target/release
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
+      # On Linux this toolchain is only used to run `cargo install cargo-deb`
+      # on the host afterward — the actual binary is built with its own fresh
+      # toolchain inside the old-glibc container below, so no cross-target
+      # setup is needed here for Linux.
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ runner.os == 'macOS' && matrix.target || '' }}
 
-      - name: Build
+      - name: Build (macOS, native cross-target)
+        if: runner.os == 'macOS'
         run: cargo build --release --locked --target ${{ matrix.target }}
+
+      # Linux binaries build inside an old Ubuntu 20.04 container (glibc 2.31)
+      # instead of natively on the runner's own Ubuntu, which ships a much
+      # newer glibc (2.39+). Rust records whatever glibc is present at build
+      # time as the binary's *minimum* required version, so building on the
+      # bleeding-edge runner broke installation on anything older than the
+      # runner's own Ubuntu release — i.e. most real systems. This runs
+      # natively on each runner's own architecture (no QEMU), so it's just as
+      # fast as building on the host directly.
+      - name: Build (Linux, old-glibc container for broad compatibility)
+        if: runner.os == 'Linux'
+        run: |
+          docker run --rm -v "$PWD":/work -w /work ubuntu:20.04 bash -c '
+            set -eu
+            apt-get update -qq
+            apt-get install -y -qq curl build-essential pkg-config
+            curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+            . "$HOME/.cargo/env"
+            cargo build --release --locked
+          '
 
       - name: Package tarball
         run: |
           mkdir -p dist
           tar -czf "dist/rtop-${{ github.ref_name }}-${{ matrix.asset }}.tar.gz" \
-            -C "target/${{ matrix.target }}/release" rtop
+            -C "${{ matrix.release_dir }}" rtop
 
       - name: Install cargo-deb
         if: matrix.deb
@@ -53,7 +82,7 @@ jobs:
 
       - name: Build .deb
         if: matrix.deb
-        run: cargo deb --target ${{ matrix.target }} --no-build --output dist/
+        run: cargo deb --no-build --output dist/
 
       - uses: actions/upload-artifact@v4
         with:

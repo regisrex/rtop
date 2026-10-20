@@ -1,2 +1,4 @@
 /target
 /scratchpad
+config.bat
+node_modules
